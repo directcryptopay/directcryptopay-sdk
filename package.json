@@ -1,0 +1,69 @@
+{
+  "name": "@directcryptopay/sdk",
+  "version": "1.0.0",
+  "description": "Official SDK for DirectCryptoPay - Accept crypto payments directly to your wallet. Non-custodial, multi-chain, developer-first.",
+  "type": "module",
+  "main": "./dist/dcp-sdk.umd.js",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "require": "./dist/dcp-sdk.umd.js",
+      "types": "./dist/index.d.ts"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "keywords": [
+    "crypto",
+    "payments",
+    "ethereum",
+    "web3",
+    "non-custodial",
+    "payment-gateway",
+    "blockchain",
+    "erc20",
+    "usdc",
+    "usdt",
+    "polygon",
+    "bnb",
+    "sdk",
+    "directcryptopay"
+  ],
+  "author": "DirectCryptoPay <contact@directcryptopay.com>",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/directcryptopay/directcryptopay-sdk.git"
+  },
+  "homepage": "https://directcryptopay.com",
+  "bugs": {
+    "url": "https://github.com/directcryptopay/directcryptopay-sdk/issues"
+  },
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build && tsc --declaration --emitDeclarationOnly --outDir dist",
+    "typecheck": "tsc --noEmit",
+    "prepublishOnly": "npm run build"
+  },
+  "dependencies": {
+    "@reown/appkit": "^1.6.0",
+    "@reown/appkit-adapter-wagmi": "^1.6.0",
+    "@tanstack/react-query": "^5.62.0",
+    "@wagmi/core": "^2.22.1",
+    "preact": "^10.25.0",
+    "viem": "^2.40.3",
+    "wagmi": "^2.19.5"
+  },
+  "devDependencies": {
+    "@preact/preset-vite": "^2.9.2",
+    "typescript": "^5.7.2",
+    "vite": "^6.0.0"
+  }
+}
