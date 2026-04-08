@@ -1,16 +1,16 @@
 {
   "name": "@directcryptopay/sdk",
-  "version": "1.0.0",
-  "description": "Official SDK for DirectCryptoPay - Accept crypto payments directly to your wallet. Non-custodial, multi-chain, developer-first.",
+  "version": "0.3.1",
+  "description": "Official SDK for DirectCryptoPay — accept crypto payments directly to your wallet. Non-custodial, multi-chain, developer-first.",
   "type": "module",
   "main": "./dist/dcp-sdk.umd.js",
   "module": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "exports": {
     ".": {
+      "types": "./dist/index.d.ts",
       "import": "./dist/index.js",
-      "require": "./dist/dcp-sdk.umd.js",
-      "types": "./dist/index.d.ts"
+      "require": "./dist/dcp-sdk.umd.js"
     }
   },
   "files": [
@@ -34,6 +34,7 @@
     "polygon",
     "bnb",
     "sdk",
+    "widget",
     "directcryptopay"
   ],
   "author": "DirectCryptoPay <contact@directcryptopay.com>",
@@ -48,21 +49,11 @@
   },
   "scripts": {
     "dev": "vite",
-    "build": "vite build && tsc --declaration --emitDeclarationOnly --outDir dist",
+    "build": "vite build && tsc -p tsconfig.declarations.json",
     "typecheck": "tsc --noEmit",
     "prepublishOnly": "npm run build"
   },
-  "dependencies": {
-    "@reown/appkit": "^1.6.0",
-    "@reown/appkit-adapter-wagmi": "^1.6.0",
-    "@tanstack/react-query": "^5.62.0",
-    "@wagmi/core": "^2.22.1",
-    "preact": "^10.25.0",
-    "viem": "^2.40.3",
-    "wagmi": "^2.19.5"
-  },
   "devDependencies": {
-    "@preact/preset-vite": "^2.9.2",
     "typescript": "^5.7.2",
     "vite": "^6.0.0"
   }

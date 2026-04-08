@@ -1,14 +1,16 @@
 # @directcryptopay/sdk
 
-Official TypeScript/JavaScript SDK for DirectCryptoPay. Create payment intents, verify webhooks, and manage crypto payments from Node.js, Edge Functions, or the browser.
+Official client-side SDK for DirectCryptoPay. Embed a full crypto checkout experience on any website with a few lines of code. Zero dependencies, ~5KB gzipped.
 
 ## Features
 
-✅ **TypeScript-first** - Full type safety with exported types
-✅ **Web Crypto API** - Works in Node.js, Edge (Vercel, Cloudflare), and browsers
-✅ **Webhook verification** - HMAC-SHA256 signature validation
-✅ **Zero dependencies** - Lightweight, uses only platform APIs
-✅ **Idempotency support** - Prevent duplicate requests
+- **Iframe-based checkout** - Full payment flow (wallet connect, chain/token selection, real-time balances) without touching Web3 libraries
+- **Zero dependencies** - No wagmi, no viem, no wallet SDKs. Everything runs inside the checkout iframe.
+- **Two payment modes** - `DCP.pay()` for payment tools (links, buttons) and `DCP.Payment()` for dynamic integration-based payments
+- **Automatic warmup** - Preloads checkout resources in the background for instant popup
+- **Lifecycle callbacks** - `onSuccess`, `onError`, `onTxSubmitted`, `onClose`, `onCancel`
+- **Multi-chain** - Ethereum, Polygon, BNB Chain, Base, Arbitrum, Optimism (mainnet + testnet)
+- **Non-custodial** - Payments go directly to your wallet
 
 ## Installation
 
@@ -16,341 +18,204 @@ Official TypeScript/JavaScript SDK for DirectCryptoPay. Create payment intents, 
 npm install @directcryptopay/sdk
 # or
 pnpm add @directcryptopay/sdk
-# or
-yarn add @directcryptopay/sdk
+# or via CDN
+<script src="https://unpkg.com/@directcryptopay/sdk/dist/dcp-sdk.umd.js"></script>
 ```
 
 ## Quick Start
 
-### Server-side: Create Payment Intent
+### 1. Initialize the SDK
 
-```typescript
-import { DirectCryptoPay } from '@directcryptopay/sdk';
+```html
+<script type="module">
+  import { DCP } from '@directcryptopay/sdk';
 
-const dcp = new DirectCryptoPay({
-  baseURL: 'https://test-api.directcryptopay.com',
-  apiKey: process.env.DCP_API_KEY!,
-});
-
-const intent = await dcp.createPaymentIntent({
-  amount: 49.99,
-  currency: 'USD',
-  metadata: {
-    order_id: 'ORD-123',
-    customer_email: 'customer@example.com'
-  },
-  idempotencyKey: crypto.randomUUID(), // Recommended
-});
-
-console.log(intent.id); // pi_abc123...
-console.log(intent.recipient); // 0x1234...
-console.log(intent.amount_wei); // "50000000000000000"
+  DCP.init({
+    // Optional: defaults to 'https://directcryptopay.com'
+    // Use 'https://preview.directcryptopay.com' for testnet
+    checkoutUrl: 'https://directcryptopay.com',
+  });
+</script>
 ```
 
-### Server-side: Verify Webhook
+### 2a. Pay with a Payment Tool (link/button)
 
-```typescript
-import { verifyWebhookSignature } from '@directcryptopay/sdk';
+Use this when you have a pre-configured payment tool from the dashboard with a fixed amount:
 
-export async function POST(req: Request) {
-  const rawBody = await req.text();
-  const signature = req.headers.get('x-dcp-signature') ?? '';
+```javascript
+DCP.pay({
+  toolId: 'pt_abc123',  // From Dashboard > Payment Tools
+  callbacks: {
+    onSuccess: ({ txHash, intentId }) => {
+      console.log('Payment confirmed!', txHash);
+    },
+    onError: (error) => {
+      console.error('Payment failed:', error.message);
+    },
+    onClose: () => {
+      console.log('Checkout closed');
+    },
+  },
+});
+```
 
-  const isValid = await verifyWebhookSignature({
-    rawBody,
-    signatureHeader: signature,
-    secret: process.env.DCP_WEBHOOK_SECRET!,
-  });
+### 2b. Pay with an Integration (dynamic amount)
 
-  if (!isValid) {
-    return new Response('Invalid signature', { status: 400 });
-  }
+Use this for e-commerce or programmatic payments where the amount is determined at runtime:
 
-  const event = JSON.parse(rawBody);
-
-  if (event.event === 'payment.succeeded') {
-    // Handle payment success
-    console.log('Payment confirmed:', event.data.id);
-  }
-
-  return new Response('OK', { status: 200 });
-}
+```javascript
+DCP.Payment({
+  integrationId: 'int_xyz789',  // From Dashboard > Integrations
+  amount_usd: '49.99',
+  currency: 'USDC',             // Optional: customer can still choose
+  metadata: {
+    order_id: 'ORD-123',
+    customer_email: 'alice@example.com',
+  },
+  callbacks: {
+    onSuccess: ({ txHash, intentId }) => {
+      // Verify server-side via webhook before fulfilling
+      fetch('/api/verify-payment', {
+        method: 'POST',
+        body: JSON.stringify({ intentId }),
+      });
+    },
+    onError: (error) => {
+      alert('Payment failed: ' + error.message);
+    },
+  },
+});
 ```
 
 ## API Reference
 
-### `DirectCryptoPay`
+### `DCP.init(config)`
 
-Main SDK class for interacting with DirectCryptoPay API.
-
-#### Constructor
+Initialize the SDK. Must be called once before `pay()` or `Payment()`.
 
 ```typescript
-const dcp = new DirectCryptoPay({
-  baseURL: string;      // e.g., 'https://api.directcryptopay.com'
-  apiKey: string;       // Your server-side API key
-  fetch?: typeof fetch; // Optional: custom fetch (for testing)
+DCP.init({
+  checkoutUrl?: string;   // Default: 'https://directcryptopay.com'
+  env?: 'test' | 'prod';  // Optional environment hint
 });
 ```
 
-#### Methods
+### `DCP.pay(options)`
 
-##### `createPaymentIntent(input)`
-
-Create a new payment intent.
+Open checkout for a pre-configured Payment Tool (link, button, donation widget).
 
 ```typescript
-const intent = await dcp.createPaymentIntent({
-  amount: 49.99,
-  currency: 'USD',
-  metadata?: { order_id: 'ORD-123' },
-  expiry_seconds?: 900, // Default: 900 (15 min)
-  idempotencyKey?: string, // Recommended
+DCP.pay({
+  toolId: string;          // Payment Tool ID (from dashboard)
+  amountUsd?: number;      // Override the tool's default amount
+  callbacks?: PaymentCallbacks;
 });
 ```
 
-**Returns:** `Promise<Intent>`
+### `DCP.Payment(options)`
 
-##### `declareTx(input)`
-
-Declare a blockchain transaction for a payment intent.
+Open checkout for an Integration with a dynamic amount.
 
 ```typescript
-await dcp.declareTx({
-  intentId: 'pi_abc123',
-  txHash: '0x1234...',
-  idempotencyKey?: string,
+DCP.Payment({
+  integrationId: string;            // Integration ID (from dashboard)
+  amount_usd?: string;              // Amount in USD
+  amount?: string | number;         // Amount in token units
+  currency?: string;                // Token symbol (ETH, USDC, USDT...)
+  chainId?: number;                 // Chain ID override
+  metadata?: Record<string, any>;   // Passed to backend & webhooks
+  callbacks?: PaymentCallbacks;
 });
 ```
 
-**Returns:** `Promise<{ accepted: true }>`
+### `DCP.close()`
 
-##### `getIntentStatus(intentId)`
+Programmatically close the checkout iframe.
 
-Get current status of a payment intent.
-
-```typescript
-const intent = await dcp.getIntentStatus('pi_abc123');
-console.log(intent.status); // 'created' | 'pending' | 'paid' | 'failed' | 'expired'
-```
-
-**Returns:** `Promise<Intent>`
-
-##### `waitForConfirmation(intentId, options?)`
-
-Poll for payment confirmation with automatic retry.
+### Callbacks
 
 ```typescript
-const confirmedIntent = await dcp.waitForConfirmation('pi_abc123', {
-  intervalMs: 2000,     // Poll every 2 seconds
-  maxAttempts: 60,      // Max 60 attempts (2 min total)
-  onTick: (attempt, status) => {
-    console.log(`Attempt ${attempt}: ${status}`);
-  },
-});
-
-console.log('Payment confirmed:', confirmedIntent.tx_hash);
-```
-
-**Returns:** `Promise<Intent>` (with `status: 'paid'`)
-**Throws:** If payment fails, expires, or times out
-
-##### `listPaymentIntents(options?)`
-
-List payment intents with pagination.
-
-```typescript
-const { data, hasMore, nextCursor } = await dcp.listPaymentIntents({
-  limit: 20,
-  cursor: 'cursor_abc',
-  status: 'paid',
-});
-```
-
-**Returns:** `Promise<{ data: Intent[], hasMore: boolean, nextCursor?: string }>`
-
-### `verifyWebhookSignature(options)`
-
-Verify HMAC-SHA256 webhook signature (timing-safe).
-
-```typescript
-const isValid = await verifyWebhookSignature({
-  rawBody: string,          // Request body as string (exact as received)
-  signatureHeader: string,  // 'X-DCP-Signature' header value
-  secret: string,           // Your webhook secret
-  toleranceSec?: number,    // Default: 300 (5 minutes)
-});
-```
-
-**Returns:** `Promise<boolean>`
-
-## Types
-
-All types are exported:
-
-```typescript
-import type {
-  Intent,
-  PaymentStatus,
-  CreateIntentInput,
-  DeclareTxInput,
-  SdkConfig,
-  ChainId,
-} from '@directcryptopay/sdk';
-```
-
-### `Intent`
-
-```typescript
-interface Intent {
-  id: string;
-  chain_id: ChainId;
-  recipient: `0x${string}`;
-  amount_wei: string;
-  currency: string;
-  amount: number;
-  expires_at: string;
-  status: PaymentStatus;
-  signature: string;
-  asset_type: 'native' | 'erc20';
-  token_address?: `0x${string}`;
-  tx_hash?: `0x${string}`;
-  confirmed_at?: string;
+interface PaymentCallbacks {
+  onOpen?: () => void;
+  onClose?: () => void;
+  onTxSubmitted?: (txHash: string) => void;
+  onSuccess?: (data: { txHash: string; intentId?: string }) => void;
+  onCancel?: () => void;
+  onError?: (error: Error) => void;
 }
 ```
 
-### `PaymentStatus`
+## UMD / Script Tag Usage
 
-```typescript
-type PaymentStatus = 'created' | 'pending' | 'paid' | 'failed' | 'expired' | 'late_confirmed';
-```
+```html
+<script src="https://unpkg.com/@directcryptopay/sdk/dist/dcp-sdk.umd.js"></script>
+<script>
+  const DCP = window.DCP.DCP;
+  DCP.init({ checkoutUrl: 'https://directcryptopay.com' });
 
-## Usage Examples
-
-### Next.js API Route (App Router)
-
-```typescript
-// app/api/dcp/create-intent/route.ts
-import { DirectCryptoPay } from '@directcryptopay/sdk';
-
-const dcp = new DirectCryptoPay({
-  baseURL: process.env.DCP_API_BASE!,
-  apiKey: process.env.DCP_API_KEY!,
-});
-
-export async function POST(req: Request) {
-  const { amount, currency } = await req.json();
-
-  const intent = await dcp.createPaymentIntent({
-    amount,
-    currency,
-    idempotencyKey: crypto.randomUUID(),
+  document.getElementById('pay-btn').addEventListener('click', () => {
+    DCP.pay({
+      toolId: 'pt_abc123',
+      callbacks: {
+        onSuccess: (data) => alert('Paid! TX: ' + data.txHash),
+      },
+    });
   });
-
-  return Response.json(intent);
-}
+</script>
 ```
 
-### Next.js Webhook Handler
+## How It Works
 
-```typescript
-// app/api/dcp/webhook/route.ts
-import { verifyWebhookSignature } from '@directcryptopay/sdk';
+1. **`DCP.init()`** preconnects to the checkout domain and warms up resources in a hidden iframe
+2. **`DCP.pay()` / `DCP.Payment()`** opens a full-screen overlay with the DirectCryptoPay checkout page in an iframe
+3. The checkout page handles wallet connection, chain/token selection, balance display, and transaction signing
+4. The iframe communicates back to the parent page via `postMessage` events
+5. Your callbacks fire for each lifecycle event (`onTxSubmitted`, `onSuccess`, `onError`, etc.)
+6. The backend independently monitors the blockchain and sends webhooks — **never trust client-side callbacks alone for fulfillment**
 
-export async function POST(req: Request) {
-  const rawBody = await req.text();
-  const signature = req.headers.get('x-dcp-signature') ?? '';
+## Server-Side Verification
 
-  const isValid = await verifyWebhookSignature({
-    rawBody,
-    signatureHeader: signature,
-    secret: process.env.DCP_WEBHOOK_SECRET!,
-  });
+The SDK provides client-side callbacks for UX (show success screen, redirect, etc.), but you should **always verify payments server-side** via webhooks before fulfilling orders.
 
-  if (!isValid) {
-    return new Response('Invalid signature', { status: 400 });
-  }
+Set up a webhook endpoint in your DCP Dashboard integration. The backend sends HMAC-SHA256 signed webhooks:
 
-  const event = JSON.parse(rawBody);
-
-  switch (event.event) {
-    case 'payment.succeeded':
-      // Handle success
-      break;
-    case 'payment.failed':
-      // Handle failure
-      break;
-  }
-
-  return new Response('OK');
-}
+```
+Header: X-DCP-Signature: t=<timestamp>,v1=<hmac_hex>
 ```
 
-### Cloudflare Workers / Edge
+See the [webhook documentation](https://docs.directcryptopay.com/webhooks/overview.html) and [examples repository](https://github.com/directcryptopay/directcryptopay-examples) for server-side verification code in Node.js, PHP, and more.
 
-```typescript
-export default {
-  async fetch(req: Request, env: Env) {
-    const dcp = new DirectCryptoPay({
-      baseURL: 'https://api.directcryptopay.com',
-      apiKey: env.DCP_API_KEY,
-    });
+## Environments
 
-    const intent = await dcp.createPaymentIntent({
-      amount: 99.99,
-      currency: 'USD',
-    });
+| Environment | Checkout URL | Chains |
+|-------------|-------------|--------|
+| Production | `https://directcryptopay.com` (default) | Ethereum, Polygon, BNB, Base, Arbitrum, Optimism |
+| Preview/Test | `https://preview.directcryptopay.com` | Sepolia, Amoy, BSC Testnet |
 
-    return new Response(JSON.stringify(intent), {
-      headers: { 'Content-Type': 'application/json' },
-    });
-  },
-};
+```javascript
+// Testnet
+DCP.init({ checkoutUrl: 'https://preview.directcryptopay.com' });
 ```
 
-## Security Best Practices
+## Changelog
 
-### ✅ DO:
+### 0.3.1 (Current)
+- Complete rewrite: replaced Preact modal + wallet SDK with lightweight iframe
+- Zero dependencies (was ~3MB, now ~5KB)
+- Automatic resource warmup on `init()`
+- postMessage-based communication with `dcp:` namespace
+- Identical UX to the hosted checkout page
 
-1. **Always verify webhook signatures** using `verifyWebhookSignature`
-2. **Use environment variables** for API keys and secrets
-3. **Use HTTPS in production**
-4. **Use idempotency keys** to prevent duplicate payments
-5. **Validate payment amounts** server-side before fulfillment
-
-### ❌ DON'T:
-
-1. **Never expose API keys** to the client (browser)
-2. **Never trust client-side payment amounts**
-3. **Never skip signature verification** on webhooks
-4. **Never hardcode secrets** in source code
-
-## Testing
-
-The SDK uses Web Crypto API which works in:
-
-- Node.js 16+ (with `globalThis.crypto`)
-- Deno
-- Cloudflare Workers
-- Vercel Edge Functions
-- Modern browsers
-
-### Test Networks
-
-- **Sepolia** (Ethereum) - chainId: 11155111
-- **Polygon Amoy** - chainId: 80002
-- **BSC Testnet** - chainId: 97
-
-### Get Test Tokens
-
-- Sepolia ETH: https://sepoliafaucet.com
-- Sepolia USDC: https://faucet.circle.com
+### 1.0.0 (Legacy)
+- Server-side SDK with `createPaymentIntent`, `verifyWebhookSignature`
+- Client-side Preact modal with wallet connection
+- **Deprecated** - use v0.3.x iframe-based SDK instead
 
 ## Support
 
-- **Documentation:** https://docs.directcryptopay.com
-- **API Reference:** https://api.directcryptopay.com/docs
-- **Dashboard:** https://app.directcryptopay.com
+- **Docs:** https://docs.directcryptopay.com
+- **Dashboard:** https://directcryptopay.com/dashboard
+- **Email:** support@directcryptopay.com
 
 ## License
 
