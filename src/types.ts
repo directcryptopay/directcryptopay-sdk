@@ -1,111 +1,49 @@
-import type { Address, Hash } from 'viem';
-
 /**
- * Payment intent from the API
+ * Callbacks for payment lifecycle events.
  */
-export interface PaymentIntent {
-  id: string;
-  chain_id: number;
-  recipient: Address;
-  amount_wei: string;
-  currency: string;
-  expires_at: string;
-  signature: string;
-  status: 'CREATED' | 'PENDING' | 'PAID' | 'FAILED' | 'EXPIRED' | 'LATE_CONFIRMED';
-  metadata?: Record<string, any>;
-  asset_type?: 'native' | 'erc20';
-  token_address?: Address;
-  token_decimals?: number;
-  nonce?: string;
-}
-
-/**
- * Gas estimation result
- */
-export interface GasEstimate {
-  gasLimit: bigint;
-  maxFeePerGas: bigint;
-  maxPriorityFeePerGas: bigint;
-  totalCostWei: bigint;
-  percentageOfPayment: number;
-  exceedsThreshold: boolean;
-}
-
-/**
- * Payment status update
- */
-export type PaymentStatus =
-  | { type: 'fetching_tool_data' }
-  | { type: 'fetching_token_balances' }
-  | { type: 'awaiting_token_selection' }
-  | { type: 'creating_payment_intent' }
-  | { type: 'estimating_gas' }
-  | { type: 'gas_estimated'; estimate: GasEstimate }
-  | { type: 'awaiting_wallet_connection' }
-  | { type: 'wallet_connected'; address: Address }
-  | { type: 'awaiting_signature' }
-  | { type: 'transaction_submitted'; txHash: Hash }
-  | { type: 'confirming'; txHash: Hash; confirmations: number }
-  | { type: 'verifying'; txHash: Hash; paymentId: string }
-  | { type: 'confirmed'; txHash: Hash; paymentId?: string }
-  | { type: 'failed'; error: Error }
-  | { type: 'rejected' }
-  | { type: 'cancelled' };
-
-export interface TokenConfig {
-  symbol: string;
-  name: string;
-  address: string | null;
-  decimals: number;
-  isNative: boolean;
-}
-
-export interface TokenWithBalance extends TokenConfig {
-  balance: string;
-  balanceFormatted: string;
-  hasBalance: boolean;
-}
-
-export interface ToolData {
-  id: string;
-  amount: string;
-  currency_id: string;
-  chain_id: number;
-  recipient_address: string;
-  available_tokens: TokenConfig[];
-  metadata: {
-    name: string;
-    type: string;
-  };
-}
-
-export interface BackendIntentResponse {
-  id: string;
-  amount: string; // Amount in token units
-  currency: string;
-  chainId: number;
-  tokenAddress: Address;
-  merchantAddress: Address;
-  expiresAt: string;
-  signature: string;
-  nonce: string;
-}
-
 export interface PaymentCallbacks {
+  /** Fired when the checkout iframe opens. */
   onOpen?: () => void;
+  /** Fired when the checkout iframe is closed (by user or programmatically). */
   onClose?: () => void;
-  onStatus?: (status: PaymentStatus) => void;
-  onTxSubmitted?: (txHash: Hash) => void;
-  onSuccess?: (receipt: any) => void;
+  /** Fired when the transaction hash is available (TX sent, not yet confirmed). */
+  onTxSubmitted?: (txHash: string) => void;
+  /** Fired when the payment is confirmed on-chain. */
+  onSuccess?: (data: { txHash: string; intentId?: string }) => void;
+  /** Fired when the user explicitly cancels the payment. */
   onCancel?: () => void;
+  /** Fired on payment error. */
   onError?: (error: Error) => void;
 }
 
+/**
+ * Options for DCP.pay() — tool-based payments (payment links, buttons, etc.)
+ */
 export interface DCPPayOptions {
+  /** The payment tool ID (from the dashboard). */
   toolId: string;
+  /** Optional amount override in USD. */
   amountUsd?: number;
-  token?: string;
+  /** Payment lifecycle callbacks. */
+  callbacks?: PaymentCallbacks;
+}
+
+/**
+ * Options for DCP.Payment() — integration-based payments with dynamic amounts.
+ */
+export interface DCPPaymentOptions {
+  /** The integration public ID. */
+  integrationId: string;
+  /** Amount in USD (mutually exclusive with `amount`). */
+  amount_usd?: string;
+  /** Amount in token units (mutually exclusive with `amount_usd`). */
+  amount?: string | number;
+  /** Token symbol (e.g., 'USDC'). When omitted, user picks from available tokens. */
+  currency?: string;
+  /** Chain ID override. */
   chainId?: number;
-  metadata?: Record<string, string>;
+  /** Arbitrary metadata passed to the backend. */
+  metadata?: Record<string, any>;
+  /** Payment lifecycle callbacks. */
   callbacks?: PaymentCallbacks;
 }
