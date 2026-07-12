@@ -1,18 +1,15 @@
 name: Publish to npm (Trusted Publishing)
 
 # Secure, reproducible publish for @directcryptopay/sdk using npm Trusted
-# Publishing (OIDC). No NPM_TOKEN is used. Publishing is NEVER automatic on a
-# plain push to main: it runs only on a published GitHub Release, or via a
-# manual workflow_dispatch that requires typing the exact version to confirm.
+# Publishing (OIDC). No NPM_TOKEN / NODE_AUTH_TOKEN is used. Publishing runs
+# ONLY on a published, non-draft, non-prerelease GitHub Release whose tag is
+# exactly "v" + the package.json version (e.g. v0.3.2). There is no manual
+# trigger and no push trigger, so a publish can never happen from an arbitrary
+# ref or without a real release.
 
 on:
   release:
     types: [published]
-  workflow_dispatch:
-    inputs:
-      confirm_version:
-        description: 'Exact version to publish (must equal package.json "version"), e.g. 0.3.2'
-        required: true
 
 permissions:
   contents: read      # checkout only
@@ -21,10 +18,49 @@ permissions:
 jobs:
   publish:
     runs-on: ubuntu-latest
-    environment: npm-publish   # optional protection gate (see report)
+    # This environment MUST exist and be protected in the repo settings
+    # (Settings -> Environments -> npm-publish, with required reviewers).
+    # See RELEASE-FIXES-CORRECTIONS report — creating it is a manual step.
+    environment: npm-publish
     steps:
-      - name: Checkout (pinned to the triggering ref)
+      - name: Reject draft or prerelease releases
+        run: |
+          if [ "${{ github.event.release.draft }}" = "true" ]; then
+            echo "::error::Refusing to publish a draft release."; exit 1
+          fi
+          if [ "${{ github.event.release.prerelease }}" = "true" ]; then
+            echo "::error::Refusing to publish a prerelease."; exit 1
+          fi
+
+      - name: Checkout the exact release tag
         uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.release.tag_name }}
+
+      - name: Confirm checked-out commit matches the release tag
+        run: |
+          TAG="${{ github.event.release.tag_name }}"
+          TAG_SHA="$(git rev-list -n 1 "refs/tags/$TAG")"
+          HEAD_SHA="$(git rev-parse HEAD)"
+          echo "release tag: $TAG"
+          echo "tag commit:  $TAG_SHA"
+          echo "checkout:    $HEAD_SHA"
+          if [ "$TAG_SHA" != "$HEAD_SHA" ]; then
+            echo "::error::Checked-out commit ($HEAD_SHA) does not match the release tag commit ($TAG_SHA)."
+            exit 1
+          fi
+
+      - name: Require tag to equal "v" + package.json version
+        run: |
+          TAG="${{ github.event.release.tag_name }}"
+          PKG_VERSION="$(node -p "require('./package.json').version")"
+          EXPECTED="v${PKG_VERSION}"
+          echo "release tag: $TAG"
+          echo "expected:    $EXPECTED"
+          if [ "$TAG" != "$EXPECTED" ]; then
+            echo "::error::Release tag '$TAG' must be exactly '$EXPECTED' (package.json version ${PKG_VERSION})."
+            exit 1
+          fi
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -32,11 +68,13 @@ jobs:
           node-version: '20'
           registry-url: 'https://registry.npmjs.org'
 
-      - name: Ensure npm supports Trusted Publishing (OIDC)
-        run: npm install -g npm@latest
+      - name: Pin npm to a Trusted-Publishing-capable version
+        # npm Trusted Publishing (OIDC) requires npm >= 11.5.1. Pin an exact
+        # version for reproducibility instead of npm@latest.
+        run: npm install -g npm@11.5.1
 
-      - name: Install dependencies (reproducible)
-        run: npm ci || npm install --no-audit --no-fund
+      - name: Install dependencies (locked, reproducible)
+        run: npm ci
 
       - name: Typecheck
         run: npm run typecheck
@@ -46,24 +84,6 @@ jobs:
 
       - name: Verify tarball is clean and reproducible
         run: npm run verify:pack
-
-      - name: Validate version matches trigger
-        run: |
-          PKG_VERSION="$(node -p "require('./package.json').version")"
-          echo "package.json version: $PKG_VERSION"
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            if [ "${{ github.event.inputs.confirm_version }}" != "$PKG_VERSION" ]; then
-              echo "::error::confirm_version '${{ github.event.inputs.confirm_version }}' != package.json '$PKG_VERSION'"
-              exit 1
-            fi
-          fi
-          if [ "${{ github.event_name }}" = "release" ]; then
-            TAG="${{ github.event.release.tag_name }}"
-            if [ "$TAG" != "v$PKG_VERSION" ] && [ "$TAG" != "$PKG_VERSION" ]; then
-              echo "::error::release tag '$TAG' does not match package.json '$PKG_VERSION'"
-              exit 1
-            fi
-          fi
 
       - name: Publish (public, Trusted Publishing / OIDC, with provenance)
         run: npm publish --access public --provenance
