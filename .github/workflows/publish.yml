@@ -1,0 +1,156 @@
+name: Publish to npm (Trusted Publishing)
+
+# Secure, reproducible publish for @directcryptopay/sdk using npm Trusted
+# Publishing (OIDC) without a long-lived registry credential. Publishing runs
+# ONLY on a published, non-draft, non-prerelease GitHub Release whose tag:
+#   - matches ^v[0-9]+\.[0-9]+\.[0-9]+$ (defensive format),
+#   - equals "v" + package.json version (only v0.3.2 for the current state),
+#   - points at the checked-out HEAD, and
+#   - is an ancestor of origin/main.
+# Release metadata is passed through step-level environment variables and
+# always quoted; it is never interpolated into shell script text.
+
+on:
+  release:
+    types: [published]
+
+permissions:
+  contents: read      # checkout only
+  id-token: write     # required for npm Trusted Publishing (OIDC)
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    # This environment MUST exist and be protected in the repo settings
+    # (Settings -> Environments -> npm-publish, with required reviewers and
+    # tag/branch restrictions). Creating it is a manual step (see report).
+    environment: npm-publish
+    steps:
+      - name: Reject draft or prerelease releases
+        env:
+          RELEASE_DRAFT: ${{ github.event.release.draft }}
+          RELEASE_PRERELEASE: ${{ github.event.release.prerelease }}
+        run: |
+          set -euo pipefail
+          if [ "$RELEASE_DRAFT" = "true" ]; then
+            echo "::error::Refusing to publish a draft release."; exit 1
+          fi
+          if [ "$RELEASE_PRERELEASE" = "true" ]; then
+            echo "::error::Refusing to publish a prerelease."; exit 1
+          fi
+
+      - name: Checkout the exact release tag (full history for ancestry)
+        uses: actions/checkout@v4
+        with:
+          # Passing the tag name as a checkout INPUT is safe (it is handled as a
+          # git ref by the action, not by a shell). It is validated below before
+          # any shell/git use.
+          ref: ${{ github.event.release.tag_name }}
+          fetch-depth: 0
+
+      - name: Validate the release tag safely (defensive, no shell injection)
+        env:
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+        run: |
+          set -euo pipefail
+          # 1) Reject any character outside the allowed set (blocks spaces,
+          #    newlines, ; $ ` ( ) quotes, slashes, leading dashes, etc.).
+          case "$RELEASE_TAG" in
+            *[!A-Za-z0-9.]*)
+              echo "::error::Release tag contains disallowed characters."; exit 1 ;;
+          esac
+          # 2) Enforce the exact SemVer tag shape (whole-string match via bash).
+          if [[ ! "$RELEASE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::Release tag '$RELEASE_TAG' is not of the form vMAJOR.MINOR.PATCH."; exit 1
+          fi
+          # 3) This candidate is intentionally locked to its one release tag.
+          if [ "$RELEASE_TAG" != "v0.3.2" ]; then
+            echo "::error::Only release tag v0.3.2 is allowed by this workflow."; exit 1
+          fi
+          echo "release tag validated: $RELEASE_TAG"
+        shell: bash
+
+      - name: Verify tag commit is HEAD and is an ancestor of origin/main
+        env:
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+        run: |
+          set -euo pipefail
+          # (a) tag exists locally and (b) resolves to a commit (peel annotated tags).
+          if ! TAG_COMMIT="$(git rev-parse -q --verify "refs/tags/${RELEASE_TAG}^{commit}")"; then
+            echo "::error::Tag '$RELEASE_TAG' not found locally or does not resolve to a commit."; exit 1
+          fi
+          HEAD_SHA="$(git rev-parse HEAD)"
+          echo "tag commit:   $TAG_COMMIT"
+          echo "HEAD:         $HEAD_SHA"
+          # (c) the checked-out HEAD is exactly the tag commit.
+          if [ "$TAG_COMMIT" != "$HEAD_SHA" ]; then
+            echo "::error::HEAD ($HEAD_SHA) is not the tag commit ($TAG_COMMIT)."; exit 1
+          fi
+          # Fetch the canonical branch only after validating the local tag/HEAD pair.
+          git fetch --no-tags origin \
+            main:refs/remotes/origin/main
+          MAIN_SHA="$(git rev-parse refs/remotes/origin/main)"
+          echo "origin/main:  $MAIN_SHA"
+          # (d) the tag commit is contained in origin/main history (provenance).
+          if ! git merge-base --is-ancestor \
+            "$TAG_COMMIT" \
+            refs/remotes/origin/main; then
+            echo "::error::Tag commit ($TAG_COMMIT) is not an ancestor of origin/main — refusing to publish."; exit 1
+          fi
+          echo "tag commit is an ancestor of origin/main: OK"
+
+      - name: Require tag to equal "v" + package.json version
+        env:
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+        run: |
+          set -euo pipefail
+          # Parse the version without needing Node (setup-node runs later).
+          PKG_VERSION="$(sed -n 's/.*"version"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' package.json | head -n1)"
+          EXPECTED="v${PKG_VERSION}"
+          echo "package.json version: $PKG_VERSION"
+          echo "expected tag:         $EXPECTED"
+          if [ "$RELEASE_TAG" != "$EXPECTED" ]; then
+            echo "::error::Release tag '$RELEASE_TAG' must equal '$EXPECTED'."; exit 1
+          fi
+
+      - name: Setup Node.js (pinned, Trusted-Publishing minimum)
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22.14.0'
+          registry-url: 'https://registry.npmjs.org'
+
+      - name: Pin npm to a Trusted-Publishing-capable version
+        # npm Trusted Publishing (OIDC) requires npm >= 11.5.1. Pin an exact
+        # version for reproducibility instead of a moving CLI release.
+        run: npm install -g npm@11.5.1
+
+      - name: Enforce Node >= 22.14.0 and npm >= 11.5.1
+        run: |
+          set -euo pipefail
+          NODE_VER="$(node -v | sed 's/^v//')"
+          NPM_VER="$(npm -v)"
+          echo "node: $NODE_VER"
+          echo "npm:  $NPM_VER"
+          ver_ge() { [ "$(printf '%s\n%s\n' "$2" "$1" | sort -V | head -n1)" = "$2" ]; }  # $1 >= $2
+          if ! ver_ge "$NODE_VER" 22.14.0; then
+            echo "::error::Node $NODE_VER < 22.14.0 (Trusted Publishing minimum)."; exit 1
+          fi
+          if ! ver_ge "$NPM_VER" 11.5.1; then
+            echo "::error::npm $NPM_VER < 11.5.1 (Trusted Publishing minimum)."; exit 1
+          fi
+          echo "Node/npm satisfy Trusted Publishing minimums."
+
+      - name: Install dependencies (locked, reproducible)
+        run: npm ci
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Build
+        run: npm run build
+
+      - name: Verify tarball is clean and reproducible
+        run: npm run verify:pack
+
+      - name: Publish (public, Trusted Publishing / OIDC, with provenance)
+        run: npm publish --access public --provenance

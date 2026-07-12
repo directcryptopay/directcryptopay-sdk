@@ -1,16 +1,15 @@
 # @directcryptopay/sdk
 
-Official client-side SDK for DirectCryptoPay. Embed a full crypto checkout experience on any website with a few lines of code. Zero dependencies, ~5KB gzipped.
+Official SDK for DirectCryptoPay — accept crypto payments directly to your wallet. Non-custodial, multi-chain, developer-first.
 
 ## Features
 
-- **Iframe-based checkout** - Full payment flow (wallet connect, chain/token selection, real-time balances) without touching Web3 libraries
-- **Zero dependencies** - No wagmi, no viem, no wallet SDKs. Everything runs inside the checkout iframe.
-- **Two payment modes** - `DCP.pay()` for payment tools (links, buttons) and `DCP.Payment()` for dynamic integration-based payments
-- **Automatic warmup** - Preloads checkout resources in the background for instant popup
-- **Lifecycle callbacks** - `onSuccess`, `onError`, `onTxSubmitted`, `onClose`, `onCancel`
-- **Multi-chain** - Ethereum, Polygon, BNB Chain, Base, Arbitrum, Optimism (mainnet + testnet)
-- **Non-custodial** - Payments go directly to your wallet
+- **Non-custodial** — Funds go directly from customer wallet to yours
+- **Multi-chain** — Ethereum, Polygon, BNB Chain, Base, Arbitrum, Optimism, Avalanche (mainnet + testnet)
+- **Lightweight** — ~5 KB bundle, opens checkout in an iframe overlay (like Stripe Checkout)
+- **WalletConnect support** — MetaMask, Rabby, WalletConnect, and 300+ wallets
+- **Two payment modes** — Tool-based (pre-configured) or Integration-based (dynamic amounts)
+- **TypeScript-first** — Full type safety with exported types
 
 ## Installation
 
@@ -18,70 +17,52 @@ Official client-side SDK for DirectCryptoPay. Embed a full crypto checkout exper
 npm install @directcryptopay/sdk
 # or
 pnpm add @directcryptopay/sdk
-# or via CDN
-<script src="https://unpkg.com/@directcryptopay/sdk/dist/dcp-sdk.umd.js"></script>
+# or
+yarn add @directcryptopay/sdk
 ```
 
 ## Quick Start
 
 ### 1. Initialize the SDK
 
-```html
-<script type="module">
-  import { DCP } from '@directcryptopay/sdk';
+Call `DCP.init()` once when your app loads.
 
-  DCP.init({
-    // Optional: defaults to 'https://directcryptopay.com'
-    // Use 'https://preview.directcryptopay.com' for testnet
-    checkoutUrl: 'https://directcryptopay.com',
-  });
-</script>
+```typescript
+import { DCP } from '@directcryptopay/sdk';
+
+DCP.init({
+  // Optional: defaults to 'https://directcryptopay.com'
+  // checkoutUrl: 'https://preview.directcryptopay.com',
+});
 ```
 
-### 2a. Pay with a Payment Tool (link/button)
+### 2. Accept a payment
 
-Use this when you have a pre-configured payment tool from the dashboard with a fixed amount:
+**Option A: Payment Tool** (pre-configured amount, token, and chain)
 
-```javascript
+```typescript
 DCP.pay({
-  toolId: 'pt_abc123',  // From Dashboard > Payment Tools
+  toolId: 'your-tool-id', // From Dashboard > Payment Tools > Get Code
   callbacks: {
-    onSuccess: ({ txHash, intentId }) => {
-      console.log('Payment confirmed!', txHash);
+    onSuccess: (data) => {
+      console.log('Payment confirmed:', data.txHash);
     },
     onError: (error) => {
-      console.error('Payment failed:', error.message);
-    },
-    onClose: () => {
-      console.log('Checkout closed');
+      console.error('Payment failed:', error);
     },
   },
 });
 ```
 
-### 2b. Pay with an Integration (dynamic amount)
+**Option B: Integration** (dynamic amount, token selector)
 
-Use this for e-commerce or programmatic payments where the amount is determined at runtime:
-
-```javascript
+```typescript
 DCP.Payment({
-  integrationId: 'int_xyz789',  // From Dashboard > Integrations
+  integrationId: 'your-integration-id',
   amount_usd: '49.99',
-  currency: 'USDC',             // Optional: customer can still choose
-  metadata: {
-    order_id: 'ORD-123',
-    customer_email: 'alice@example.com',
-  },
   callbacks: {
-    onSuccess: ({ txHash, intentId }) => {
-      // Verify server-side via webhook before fulfilling
-      fetch('/api/verify-payment', {
-        method: 'POST',
-        body: JSON.stringify({ intentId }),
-      });
-    },
-    onError: (error) => {
-      alert('Payment failed: ' + error.message);
+    onSuccess: (data) => {
+      console.log('Paid:', data.txHash);
     },
   },
 });
@@ -96,37 +77,40 @@ Initialize the SDK. Must be called once before `pay()` or `Payment()`.
 ```typescript
 DCP.init({
   checkoutUrl?: string;   // Default: 'https://directcryptopay.com'
-  env?: 'test' | 'prod';  // Optional environment hint
+  projectId?: string;     // Deprecated — no longer needed
+  env?: 'test' | 'prod';
 });
 ```
 
 ### `DCP.pay(options)`
 
-Open checkout for a pre-configured Payment Tool (link, button, donation widget).
+Open the checkout iframe for a pre-configured Payment Tool.
 
 ```typescript
 DCP.pay({
-  toolId: string;          // Payment Tool ID (from dashboard)
-  amountUsd?: number;      // Override the tool's default amount
+  toolId: string;               // Required — Payment Tool ID
+  amountUsd?: number;           // Override USD amount (for donations)
   callbacks?: PaymentCallbacks;
 });
 ```
 
 ### `DCP.Payment(options)`
 
-Open checkout for an Integration with a dynamic amount.
+Open the checkout iframe for an Integration-based payment.
 
 ```typescript
 DCP.Payment({
-  integrationId: string;            // Integration ID (from dashboard)
-  amount_usd?: string;              // Amount in USD
-  amount?: string | number;         // Amount in token units
-  currency?: string;                // Token symbol (ETH, USDC, USDT...)
-  chainId?: number;                 // Chain ID override
-  metadata?: Record<string, any>;   // Passed to backend & webhooks
+  integrationId: string;                   // Required — Integration public ID
+  amount_usd?: string;                     // Amount in USD (e.g., '49.99')
+  amount?: string | number;                // OR amount in token units (not both)
+  currency?: string;                       // Pre-select token (skips selector)
+  chainId?: number;                        // Pre-select chain
+  metadata?: Record<string, any>;          // Custom metadata
   callbacks?: PaymentCallbacks;
 });
 ```
+
+> **Note:** Provide either `amount_usd` or `amount`, not both.
 
 ### `DCP.close()`
 
@@ -134,31 +118,110 @@ Programmatically close the checkout iframe.
 
 ### Callbacks
 
+All callbacks are optional.
+
 ```typescript
 interface PaymentCallbacks {
-  onOpen?: () => void;
-  onClose?: () => void;
-  onTxSubmitted?: (txHash: string) => void;
-  onSuccess?: (data: { txHash: string; intentId?: string }) => void;
-  onCancel?: () => void;
-  onError?: (error: Error) => void;
+  onOpen?: () => void;                                          // Iframe opened
+  onClose?: () => void;                                         // Iframe closed
+  onTxSubmitted?: (txHash: string) => void;                     // Transaction sent
+  onSuccess?: (data: { txHash: string; intentId?: string }) => void;  // Payment confirmed
+  onCancel?: () => void;                                        // User cancelled
+  onError?: (error: Error) => void;                             // Error occurred
 }
 ```
 
-## UMD / Script Tag Usage
+## Framework Examples
+
+### Next.js (App Router)
+
+**1. Create a provider:**
+
+```tsx
+// components/DCPProvider.tsx
+'use client';
+
+import { useEffect } from 'react';
+
+export function DCPProvider({ children }: { children: React.ReactNode }) {
+  useEffect(() => {
+    import('@directcryptopay/sdk').then(({ DCP }) => {
+      DCP.init({});
+    });
+  }, []);
+
+  return <>{children}</>;
+}
+```
+
+**2. Wrap your layout:**
+
+```tsx
+// app/layout.tsx
+import { DCPProvider } from '@/components/DCPProvider';
+
+export default function RootLayout({ children }: { children: React.ReactNode }) {
+  return (
+    <html lang="en">
+      <body>
+        <DCPProvider>{children}</DCPProvider>
+      </body>
+    </html>
+  );
+}
+```
+
+**3. Create a pay button:**
+
+```tsx
+// components/PayButton.tsx
+'use client';
+
+import { useState } from 'react';
+
+export function PayButton({ toolId, label = 'Pay with Crypto' }: {
+  toolId: string;
+  label?: string;
+}) {
+  const [status, setStatus] = useState<string | null>(null);
+
+  const handlePay = async () => {
+    setStatus('pending');
+    const { DCP } = await import('@directcryptopay/sdk');
+    DCP.pay({
+      toolId,
+      callbacks: {
+        onSuccess: () => setStatus('confirmed'),
+        onError: () => setStatus('failed'),
+        onClose: () => setStatus(null),
+      }
+    });
+  };
+
+  return (
+    <button onClick={handlePay} disabled={status === 'pending'}>
+      {status === 'confirmed' ? 'Payment Confirmed!' :
+       status === 'pending' ? 'Processing...' : label}
+    </button>
+  );
+}
+```
+
+### Vanilla JavaScript
 
 ```html
-<script src="https://unpkg.com/@directcryptopay/sdk/dist/dcp-sdk.umd.js"></script>
-<script>
-  const DCP = window.DCP.DCP;
-  DCP.init({ checkoutUrl: 'https://directcryptopay.com' });
+<script type="module">
+  import { DCP } from 'https://unpkg.com/@directcryptopay/sdk/dist/index.js';
+
+  DCP.init({});
 
   document.getElementById('pay-btn').addEventListener('click', () => {
     DCP.pay({
-      toolId: 'pt_abc123',
+      toolId: 'your-tool-id',
       callbacks: {
-        onSuccess: (data) => alert('Paid! TX: ' + data.txHash),
-      },
+        onSuccess: (data) => alert('Payment confirmed!'),
+        onError: (error) => alert('Payment failed: ' + error.message),
+      }
     });
   });
 </script>
@@ -166,56 +229,38 @@ interface PaymentCallbacks {
 
 ## How It Works
 
-1. **`DCP.init()`** preconnects to the checkout domain and warms up resources in a hidden iframe
-2. **`DCP.pay()` / `DCP.Payment()`** opens a full-screen overlay with the DirectCryptoPay checkout page in an iframe
-3. The checkout page handles wallet connection, chain/token selection, balance display, and transaction signing
-4. The iframe communicates back to the parent page via `postMessage` events
-5. Your callbacks fire for each lifecycle event (`onTxSubmitted`, `onSuccess`, `onError`, etc.)
-6. The backend independently monitors the blockchain and sends webhooks — **never trust client-side callbacks alone for fulfillment**
+When `DCP.pay()` or `DCP.Payment()` is called, the SDK opens an iframe overlay pointing to the DirectCryptoPay checkout page. The checkout page handles:
 
-## Server-Side Verification
+1. Wallet connection (MetaMask, Rabby, WalletConnect, etc.)
+2. Smart token detection and balance display
+3. Network switching
+4. Transaction signing and submission
+5. On-chain verification
 
-The SDK provides client-side callbacks for UX (show success screen, redirect, etc.), but you should **always verify payments server-side** via webhooks before fulfilling orders.
+The SDK communicates with the iframe via `postMessage` and maps events to your callbacks. This architecture keeps the SDK lightweight (~5 KB) while providing the full checkout experience.
 
-Set up a webhook endpoint in your DCP Dashboard integration. The backend sends HMAC-SHA256 signed webhooks:
+## Security
 
-```
-Header: X-DCP-Signature: t=<timestamp>,v1=<hmac_hex>
-```
+The frontend callbacks (`onSuccess`, `onError`) are for **UX purposes only**. For production apps, always verify payments server-side using [webhooks](https://docs.directcryptopay.com).
 
-See the [webhook documentation](https://docs.directcryptopay.com/webhooks/overview.html) and [examples repository](https://github.com/directcryptopay/directcryptopay-examples) for server-side verification code in Node.js, PHP, and more.
+DirectCryptoPay is non-custodial: transactions go directly from the customer's wallet to your wallet address. No funds are held by DirectCryptoPay at any point.
 
-## Environments
+## Migrating from v0.2.x
 
-| Environment | Checkout URL | Chains |
-|-------------|-------------|--------|
-| Production | `https://directcryptopay.com` (default) | Ethereum, Polygon, BNB, Base, Arbitrum, Optimism |
-| Preview/Test | `https://preview.directcryptopay.com` | Sepolia, Amoy, BSC Testnet |
+v0.3.0 is a major refactor. The public API is the same, but:
 
-```javascript
-// Testnet
-DCP.init({ checkoutUrl: 'https://preview.directcryptopay.com' });
-```
+- `DCP.init({ projectId })` — `projectId` is no longer required (can be omitted)
+- `DCP.init({ checkoutUrl })` — new option to customize checkout URL
+- `onStatus` callback removed — use `onTxSubmitted` and `onSuccess` instead
+- Bundle size reduced from ~3 MB to ~5 KB
 
-## Changelog
+## Links
 
-### 0.3.1 (Current)
-- Complete rewrite: replaced Preact modal + wallet SDK with lightweight iframe
-- Zero dependencies (was ~3MB, now ~5KB)
-- Automatic resource warmup on `init()`
-- postMessage-based communication with `dcp:` namespace
-- Identical UX to the hosted checkout page
-
-### 1.0.0 (Legacy)
-- Server-side SDK with `createPaymentIntent`, `verifyWebhookSignature`
-- Client-side Preact modal with wallet connection
-- **Deprecated** - use v0.3.x iframe-based SDK instead
-
-## Support
-
-- **Docs:** https://docs.directcryptopay.com
-- **Dashboard:** https://directcryptopay.com/dashboard
-- **Email:** support@directcryptopay.com
+- **Website:** [directcryptopay.com](https://directcryptopay.com)
+- **Dashboard:** [directcryptopay.com/dashboard](https://directcryptopay.com/dashboard)
+- **Documentation:** [docs.directcryptopay.com](https://docs.directcryptopay.com)
+- **API Docs:** [api.directcryptopay.com/api/docs](https://api.directcryptopay.com/api/docs)
+- **GitHub:** [github.com/directcryptopay](https://github.com/directcryptopay)
 
 ## License
 
