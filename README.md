@@ -9,7 +9,7 @@
 > from a client-side callback. The only source of truth is the **HMAC-signed
 > webhook**, verified server-side against your webhook secret.
 >
-> Since **v0.3.3** the SDK validates the `origin` and `source` of every incoming
+> Since **v0.3.4** the SDK validates the `origin` and `source` of every incoming
 > `postMessage`. Versions **0.3.2 and earlier did not** and could be tricked by
 > any third-party frame or script on the merchant page into firing a fake
 > `onSuccess`. Upgrade if you are on an older version.

@@ -4,7 +4,7 @@ name: Publish to npm (Trusted Publishing)
 # Publishing (OIDC) without a long-lived registry credential. Publishing runs
 # ONLY on a published, non-draft, non-prerelease GitHub Release whose tag:
 #   - matches ^v[0-9]+\.[0-9]+\.[0-9]+$ (defensive format),
-#   - equals "v" + package.json version (only v0.3.2 for the current state),
+#   - equals "v" + package.json version (only v0.3.4 for the current state),
 #   - points at the checked-out HEAD, and
 #   - is an ancestor of origin/main.
 # Release metadata is passed through step-level environment variables and
@@ -64,8 +64,8 @@ jobs:
             echo "::error::Release tag '$RELEASE_TAG' is not of the form vMAJOR.MINOR.PATCH."; exit 1
           fi
           # 3) This candidate is intentionally locked to its one release tag.
-          if [ "$RELEASE_TAG" != "v0.3.2" ]; then
-            echo "::error::Only release tag v0.3.2 is allowed by this workflow."; exit 1
+          if [ "$RELEASE_TAG" != "v0.3.4" ]; then
+            echo "::error::Only release tag v0.3.4 is allowed by this workflow."; exit 1
           fi
           echo "release tag validated: $RELEASE_TAG"
         shell: bash
