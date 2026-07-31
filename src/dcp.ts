@@ -78,7 +78,18 @@ export class DCP {
         window.removeEventListener('message', onReady);
       };
 
+      // SECURITY — only accept the ready signal from the warmup frame itself,
+      // served from the checkout origin.
+      let warmupOrigin: string;
+      try {
+        warmupOrigin = new URL(checkoutUrl, window.location.href).origin;
+      } catch {
+        warmupOrigin = '';
+      }
+
       const onReady = (e: MessageEvent) => {
+        if (e.source !== frame.contentWindow) return;
+        if (!warmupOrigin || e.origin !== warmupOrigin) return;
         if (e.data?.type === 'dcp:ready') cleanupWarmup();
       };
       window.addEventListener('message', onReady);

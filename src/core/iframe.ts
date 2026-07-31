@@ -14,6 +14,17 @@ export interface IframeCallbacks {
 export function openCheckoutIframe(url: string, callbacks?: IframeCallbacks): () => void {
   let cleaned = false;
 
+  // SECURITY — origin of the checkout page. Every incoming postMessage is
+  // matched against it; anything else is discarded. Without this, any third
+  // party able to postMessage into the merchant page (ad frame, chat widget,
+  // analytics script, window.open'd popup) could forge a payment result.
+  let expectedOrigin: string;
+  try {
+    expectedOrigin = new URL(url, window.location.href).origin;
+  } catch {
+    throw new Error('DirectCryptoPay: invalid checkout URL');
+  }
+
   // --- Overlay (single dark backdrop — widget overlay is transparent inside iframe) ---
   const overlay = document.createElement('div');
   overlay.id = 'dcp-checkout-overlay';
@@ -111,6 +122,12 @@ export function openCheckoutIframe(url: string, callbacks?: IframeCallbacks): ()
 
   // --- postMessage listener ---
   const handleMessage = (event: MessageEvent) => {
+    // SECURITY — both checks are required and neither is sufficient alone.
+    // `source` alone can be spoofed through an inherited about:blank context;
+    // `origin` alone still trusts any other frame served from the same origin.
+    if (event.source !== iframe.contentWindow) return;
+    if (event.origin !== expectedOrigin) return;
+
     const data = event.data;
     if (!data || typeof data.type !== 'string') return;
     if (!data.type.startsWith('dcp:')) return;

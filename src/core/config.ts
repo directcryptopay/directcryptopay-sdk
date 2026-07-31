@@ -18,9 +18,22 @@ class Config {
   private config: DCPConfig | null = null;
 
   init(userConfig: DCPInitConfig): void {
-    this.config = {
-      checkoutUrl: (userConfig.checkoutUrl || 'https://directcryptopay.com').replace(/\/$/, ''),
-    };
+    const raw = (userConfig.checkoutUrl || 'https://directcryptopay.com').replace(/\/$/, '');
+
+    // SECURITY — checkoutUrl ends up as an iframe src and as the expected
+    // postMessage origin. Reject anything that is not plain http(s) so a
+    // malformed or hostile value cannot degrade origin checking.
+    let parsed: URL;
+    try {
+      parsed = new URL(raw);
+    } catch {
+      throw new Error('DirectCryptoPay: checkoutUrl must be an absolute URL');
+    }
+    if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') {
+      throw new Error('DirectCryptoPay: checkoutUrl must use http or https');
+    }
+
+    this.config = { checkoutUrl: raw };
   }
 
   get(): DCPConfig {

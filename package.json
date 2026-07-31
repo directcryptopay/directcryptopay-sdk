@@ -1,6 +1,6 @@
 {
   "name": "@directcryptopay/sdk",
-  "version": "0.3.2",
+  "version": "0.3.3",
   "description": "Official SDK for DirectCryptoPay — accept crypto payments directly to your wallet. Non-custodial, multi-chain, developer-first.",
   "type": "module",
   "main": "./dist/dcp-sdk.umd.js",

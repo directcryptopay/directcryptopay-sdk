@@ -1,5 +1,20 @@
 # @directcryptopay/sdk
 
+> ## ⚠️ Security model — read this first
+>
+> **No signal coming from the browser is proof of payment.** The `onSuccess`,
+> `onTxSubmitted` and `onCancel` callbacks exist for user experience only.
+>
+> **Never** grant access, ship an order, unlock a download or credit an account
+> from a client-side callback. The only source of truth is the **HMAC-signed
+> webhook**, verified server-side against your webhook secret.
+>
+> Since **v0.3.3** the SDK validates the `origin` and `source` of every incoming
+> `postMessage`. Versions **0.3.2 and earlier did not** and could be tricked by
+> any third-party frame or script on the merchant page into firing a fake
+> `onSuccess`. Upgrade if you are on an older version.
+
+
 Official SDK for DirectCryptoPay — accept crypto payments directly to your wallet. Non-custodial, multi-chain, developer-first.
 
 ## Features
